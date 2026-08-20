@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>炫彩卡片导航（可编辑保存）</title>
+    <title>炫彩卡片导航（云端同步版）</title>
     <style>
         * {
             box-sizing: border-box;
@@ -346,13 +346,18 @@
                 </div>
                 <div class="modal-buttons">
                     <button type="button" class="btn-cancel" id="closeModalBtn">取消</button>
-                    <button type="submit" class="btn-submit">保存</button>
+                    <button type="submit" class="btn-submit" id="submitBtn">保存</button>
                 </div>
             </form>
         </div>
     </div>
 
     <script>
+        // 1. 云端配置信息
+        const BIN_ID = '6a8703d5f5f4af5e292d2770'; // ⚠️【必填】粘贴你在 JSONBin 获取到的 Bin ID
+        const API_KEY = '$2a$10$kbEA4RHQdehoXWzi4Lr8oeQ6v/tGaV6.fjG.J.eRaE8bcX0rAZEW6';
+        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
         // 预设色彩组合
         const colorPalettes = [
             { start: '#ff4e50', end: '#f9d423', shadow: 'rgba(255, 78, 80, 0.4)' },
@@ -363,16 +368,8 @@
             { start: '#ff0844', end: '#ffb199', shadow: 'rgba(255, 8, 68, 0.4)' }
         ];
 
-        // 默认数据
-        const defaultCards = [
-            { id: 1, name: '百度', url: 'https://www.baidu.com', desc: '全球最大的中文搜索引擎。', palette: colorPalettes[0] },
-            { id: 2, name: 'Bilibili', url: 'https://www.bilibili.com', desc: '年轻人的文化社区与视频平台。', palette: colorPalettes[1] },
-            { id: 3, name: 'GitHub', url: 'https://www.github.com', desc: '面向开源及私有项目的托管平台。', palette: colorPalettes[2] },
-            { id: 4, name: 'V2EX', url: 'https://www.v2ex.com', desc: '创意工作者的技术交流社区。', palette: colorPalettes[3] }
-        ];
-
-        // 1. 读取本地数据
-        let cards = JSON.parse(localStorage.getItem('my_nav_cards')) || defaultCards;
+        // 本地卡片数据数组
+        let cards = [];
 
         const cardContainer = document.getElementById('cardContainer');
         const modalOverlay = document.getElementById('modalOverlay');
@@ -380,20 +377,53 @@
         const openModalBtn = document.getElementById('openModalBtn');
         const closeModalBtn = document.getElementById('closeModalBtn');
         const cardForm = document.getElementById('cardForm');
+        const submitBtn = document.getElementById('submitBtn');
         
         const cardIdInput = document.getElementById('cardId');
         const siteNameInput = document.getElementById('siteName');
         const siteUrlInput = document.getElementById('siteUrl');
         const siteDescInput = document.getElementById('siteDesc');
 
-        // 保存到 localStorage
-        function saveCards() {
-            localStorage.setItem('my_nav_cards', JSON.stringify(cards));
+        // 从云端读取数据
+        async function loadCardsFromCloud() {
+            cardContainer.innerHTML = '<div style="color:#a0aec0; text-align:center; grid-column: 1/-1; padding: 40px 0;">☁️ 正在从云端同步卡片数据...</div>';
+            try {
+                const res = await fetch(`${API_URL}/latest`, {
+                    headers: { 'X-Master-Key': API_KEY }
+                });
+                if (!res.ok) throw new Error('网络请求错误');
+                const data = await res.json();
+                cards = data.record || [];
+                renderCards();
+            } catch (err) {
+                cardContainer.innerHTML = '<div style="color:#ff4757; text-align:center; grid-column: 1/-1;">⚠️ 云端同步失败，请检查 Bin ID 与网络！</div>';
+            }
         }
 
-        // 2. 渲染所有卡片
+        // 保存数据到云端
+        async function saveCardsToCloud() {
+            try {
+                await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Master-Key': API_KEY
+                    },
+                    body: JSON.stringify(cards)
+                });
+            } catch (err) {
+                alert('云端同步失败，请重试！');
+            }
+        }
+
+        // 渲染所有卡片
         function renderCards() {
             cardContainer.innerHTML = '';
+            if (cards.length === 0) {
+                cardContainer.innerHTML = '<div style="color:#a0aec0; text-align:center; grid-column: 1/-1; padding: 40px 0;">暂无收藏网站，点击右上角添加吧！</div>';
+                return;
+            }
+
             cards.forEach(card => {
                 const wrapper = document.createElement('div');
                 wrapper.className = 'card-wrapper';
@@ -422,7 +452,7 @@
             });
         }
 
-        // 3. 打开“添加”弹窗
+        // 打开“添加”弹窗
         openModalBtn.addEventListener('click', () => {
             modalTitle.innerText = '添加新卡片';
             cardIdInput.value = '';
@@ -430,7 +460,7 @@
             modalOverlay.classList.add('active');
         });
 
-        // 4. 打开“编辑”弹窗并回显数据
+        // 打开“编辑”弹窗并回显数据
         function openEditModal(event, id) {
             event.preventDefault();
             event.stopPropagation();
@@ -447,25 +477,25 @@
             modalOverlay.classList.add('active');
         }
 
-        // 5. 删除卡片
-        function deleteCard(event, id) {
+        // 删除卡片
+        async function deleteCard(event, id) {
             event.preventDefault();
             event.stopPropagation();
             if (confirm('确定要删除这个网站卡片吗？')) {
                 cards = cards.filter(card => card.id !== id);
-                saveCards();
                 renderCards();
+                await saveCardsToCloud(); // 同步到云端
             }
         }
 
-        // 6. 关闭弹窗
+        // 关闭弹窗
         closeModalBtn.addEventListener('click', () => modalOverlay.classList.remove('active'));
         modalOverlay.addEventListener('click', (e) => {
             if (e.target === modalOverlay) modalOverlay.classList.remove('active');
         });
 
-        // 7. 提交表单（处理新增或编辑）
-        cardForm.addEventListener('submit', (e) => {
+        // 提交表单（处理新增或编辑）
+        cardForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const id = cardIdInput.value;
@@ -497,15 +527,18 @@
                 });
             }
 
-            saveCards();
             renderCards();
-
             cardForm.reset();
             modalOverlay.classList.remove('active');
+
+            // 禁用保存按钮，提示同步中
+            submitBtn.innerText = '保存中...';
+            await saveCardsToCloud(); // 写入云端
+            submitBtn.innerText = '保存';
         });
 
-        // 初始渲染
-        renderCards();
+        // 页面初始化：拉取云端数据
+        loadCardsFromCloud();
     </script>
 </body>
 </html>
